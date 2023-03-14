@@ -1,0 +1,111 @@
+---
+title: "Exercise-1"
+author: "Himanshu Mayank"
+date: "2023-03-07"
+output: pdf_document
+---
+**Loading the connections dataset**
+```{r Loading the data}
+library("tidyverse")
+library("igraph")
+csv = read_csv('Connections.csv')
+csv
+View(csv)
+attach(csv)
+df = csv %>% mutate(Company = str_trim(Company)) %>% drop_na(Company)  
+head(df,10)
+```
+**Filtering out the data and choosing  top 5 companies   my connections belong to **
+```{r Filtering top 5 companies}
+library(dplyr)
+
+# group the data by Company and count the frequency
+company_count <- df %>% 
+  group_by(Company) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+# get the top 10 companies by frequency
+top_5_companies <- company_count$Company[1:5]
+head(top_5_companies,10)
+```
+
+```{r Filtering the data}
+# filter the data for only the top 10 companies
+csv <- df %>% 
+  filter(Company %in% top_5_companies)
+csv$`Last_Name` <- substr(csv$`Last Name`, 1, 1)
+csv <- csv %>% 
+  slice_sample(n = 50, replace = TRUE) 
+head(csv,10)
+```
+
+
+**Counting the number of connections from the sample for each company.For simplicity top 5 organisations is selected **
+
+```{r company}
+count = csv %>% count(Company, sort=TRUE)
+count
+```
+
+
+
+**Creating a new column with the first name with the last name initials**
+
+```{r counting}
+csv$last_initial <- substr(csv$`Last Name`, 1, 1)
+csv$Full_Name <- paste(csv$`First Name`, csv$last_initial, sep = " ")
+new_csv <- csv[, c("Full_Name", "Company")]
+```
+**Create a new data frame called nodes by selecting only unique Full_Name values from the new_csv data frame, and then adding a new column called id with unique identifier values for each row.**
+
+```{r creating nodes}
+nodes <- new_csv %>% distinct(Full_Name)
+nodes <- nodes %>% rowid_to_column('id')
+nodes
+copy <- new_csv
+colnames(copy) <- paste(colnames(copy), "2", sep="_")
+```
+**Create a new data frame called cross by taking the cross-product of the new_csv and copy data frames, resulting in every possible combination of rows from both data frames.**
+**A new data frame called edges is created  by filtering the cross data frame to include only rows where the Company and Company_2 columns are equal and the Full_Name and Full_Name_2 columns are not equal.**
+
+```{r creating cross}
+cross <- tidyr::crossing(new_csv, copy, .name_repair="minimal")
+edges <- filter(cross, cross$Company == cross$Company_2 & cross$Full_Name != cross$Full_Name_2)
+edges <- edges %>% select(Full_Name, Company, Full_Name_2, Company_2)
+edges <- edges %>% 
+  left_join(nodes, by = c("Full_Name" = "Full_Name")) %>% 
+  rename(node_1 = id)
+edges <- edges %>% 
+  left_join(nodes, by = c("Full_Name_2" = "Full_Name")) %>% 
+  rename(node_2 = id)
+edges <- select(edges, node_1, node_2)
+head(edges,10)
+```
+
+**Creating a network from the given nodes and edges**
+```{r importing the graph libraries}
+library("tidygraph")
+library("ggraph")
+network <- tbl_graph(nodes=nodes, edges=edges, directed=FALSE)
+network
+```
+**Plotting the graph. People from same organisation will share an edge **
+```{r plotting}
+ggraph(network) +
+geom_edge_link() +
+geom_node_point() +
+geom_node_text(aes(label=Full_Name), repel=TRUE) +
+theme_graph()
+```
+```{r plotting -2}
+graph <- graph_from_data_frame(edges, vertices = nodes, directed = FALSE)
+V(graph)$name <- nodes$Full_Name
+par(mar = rep(1, 4))
+options(repr.plot.width = 100, repr.plot.height = 1000)
+plot(graph, vertex.size = 7, vertex.color = "lightpink", vertex.label.cex = 0.6, edge.color = "gray", edge.width = 2, edge.length=500000, vertex.dist = 50)
+```
+
+
+
+**Intuitively we can see that we get 5 different graphs ,one for each organisation since the data was filtered and sampled for top 5 ornagisation** 
